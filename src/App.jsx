@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer } from "react";\
+import { useState, useEffect, useReducer } from "react";
 
 // ==================== SUPABASE CONFIG ====================
 const SUPABASE_URL = "https://rytmfebuxsviqhlltbez.supabase.co";
