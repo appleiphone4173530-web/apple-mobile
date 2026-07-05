@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer } from "react";
+import { useState, useEffect, useReducer } from "react";\
 
 // ==================== SUPABASE CONFIG ====================
 const SUPABASE_URL = "https://rytmfebuxsviqhlltbez.supabase.co";
@@ -6,7 +6,9 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 const db = {
   async get(table) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=date.desc`, {
+    const hasDate = ["sales", "maintenance", "software"].includes(table);
+    const order = hasDate ? "?order=date.desc" : "";
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${order}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
     return r.ok ? r.json() : [];
@@ -490,10 +492,107 @@ function DebtsSection({ debts, onRefresh }) {
   );
 }
 
+// ==================== BARCODE ====================
+function BarcodeBar({ value }) {
+  // Simple Code128-style visual barcode using bars
+  const encode = (str) => {
+    let bars = [];
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      const pattern = (code * 3 + i * 7 + 13) % 15;
+      bars.push({ w: (pattern % 3) + 1, gap: (pattern % 2) + 1 });
+    }
+    return bars;
+  };
+  const bars = encode(value);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", height: 50, gap: 1, justifyContent: "center", margin: "8px 0" }}>
+      <div style={{ width: 2, height: 50, background: "#000" }} />
+      {bars.map((b, i) => (
+        <div key={i} style={{ display: "flex", gap: b.gap }}>
+          <div style={{ width: b.w * 2, height: 50, background: "#000" }} />
+          <div style={{ width: b.gap * 2, height: 50, background: "#fff" }} />
+        </div>
+      ))}
+      <div style={{ width: 2, height: 50, background: "#000" }} />
+    </div>
+  );
+}
+
+function PrintLabel({ product, onClose }) {
+  const handlePrint = () => {
+    const qty = product.stock || 1;
+    const labels = Array.from({ length: qty }).map((_, idx) => `
+      <div class="label">
+        <div class="shop">أبل للهاتف المحمول - الزاوية</div>
+        <div class="name">${product.name}</div>
+        <div class="code">كود: ${product.barcode}</div>
+        <div class="barcode" id="bc${idx}"></div>
+        <div class="num">${product.barcode}</div>
+        <div class="price">${Number(product.sell_price).toLocaleString("ar-LY")} د.ل</div>
+      </div>
+    `).join("");
+
+    const scripts = Array.from({ length: qty }).map((_, idx) => `
+      (function(){
+        const bc = document.getElementById('bc${idx}');
+        const val = "${product.barcode}";
+        bc.innerHTML = '<div class="bar" style="width:3px;height:50px"></div>';
+        for(let i=0;i<val.length;i++){
+          const c=val.charCodeAt(i);
+          const p=(c*3+i*7+13)%15;
+          bc.innerHTML += '<div class="bar" style="width:'+(p%3+1)*3+'px;height:50px"></div>';
+          bc.innerHTML += '<div style="width:'+(p%2+1)*2+'px;height:50px"></div>';
+        }
+        bc.innerHTML += '<div class="bar" style="width:3px;height:50px"></div>';
+      })();
+    `).join("");
+
+    const w = window.open("", "_blank");
+    w.document.write(`
+      <html><head><title>بطاقات سعر - ${product.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; direction: rtl; margin: 0; padding: 10px; }
+        .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .label { border: 2px solid #000; border-radius: 8px; padding: 12px; width: 180px; text-align: center; page-break-inside: avoid; }
+        .shop { font-size: 10px; color: #555; margin-bottom: 4px; }
+        .name { font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+        .code { font-size: 10px; color: #888; margin-bottom: 4px; }
+        .price { font-size: 18px; font-weight: 900; color: #1a1a2e; margin: 6px 0; }
+        .barcode { display: flex; justify-content: center; align-items: flex-end; height: 45px; gap: 1px; margin: 6px 0; }
+        .bar { background: #000; }
+        .num { font-size: 9px; letter-spacing: 2px; margin-top: 2px; }
+        @media print { body { margin: 0; } }
+      </style></head><body>
+      <div class="grid">${labels}</div>
+      <script>${scripts} window.print();</script>
+      </body></html>
+    `);
+    w.document.close();
+  };
+
+  return (
+    <Modal title="طباعة بطاقة السعر" onClose={onClose}>
+      <div style={{ textAlign: "center", border: "2px solid #1a1a2e", borderRadius: 12, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>أبل للهاتف المحمول - الزاوية</div>
+        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{product.name}</div>
+        <div style={{ fontSize: 11, color: "#888" }}>كود: {product.barcode}</div>
+        <BarcodeBar value={product.barcode} />
+        <div style={{ fontSize: 10, letterSpacing: 3, color: "#555", marginBottom: 8 }}>{product.barcode}</div>
+        <div style={{ fontWeight: 900, fontSize: 24, color: "#1a1a2e" }}>{dinarFmt(product.sell_price)}</div>
+      </div>
+      <button onClick={handlePrint} style={{ width: "100%", background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 10, padding: 12, fontFamily: "inherit", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
+        🖨️ طباعة البطاقة
+      </button>
+    </Modal>
+  );
+}
+
 // ==================== INVENTORY ====================
 function InventorySection({ products, onRefresh }) {
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ category: "iphone", name: "", buyPrice: "", sellPrice: "", stock: "" });
+  const [printProduct, setPrintProduct] = useState(null);
+  const [form, setForm] = useState({ category: "iphone", name: "", buyPrice: "", sellPrice: "", stock: "", barcode: "" });
   const [saving, setSaving] = useState(false);
 
   const allProducts = [
@@ -505,11 +604,11 @@ function InventorySection({ products, onRefresh }) {
   const handleAdd = async () => {
     if (!form.name || !form.buyPrice || !form.sellPrice || !form.stock) return alert("الرجاء تعبئة جميع الحقول");
     setSaving(true);
-    await db.insertProduct({ id: uid(), category: form.category, name: form.name, buy_price: Number(form.buyPrice), sell_price: Number(form.sellPrice), stock: Number(form.stock), color: "" });
+    await db.insertProduct({ id: uid(), category: form.category, name: form.name, buy_price: Number(form.buyPrice), sell_price: Number(form.sellPrice), stock: Number(form.stock), color: "", barcode: form.barcode || uid().toUpperCase() });
     await onRefresh();
     setSaving(false);
     setShowModal(false);
-    setForm({ category: "iphone", name: "", buyPrice: "", sellPrice: "", stock: "" });
+    setForm({ category: "iphone", name: "", buyPrice: "", sellPrice: "", stock: "", barcode: "" });
   };
 
   return (
@@ -522,7 +621,7 @@ function InventorySection({ products, onRefresh }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ background: "#f7f8fc" }}>
-              {["الفئة", "المنتج", "سعر الشراء", "سعر البيع", "هامش الربح", "المخزون"].map(h => (
+              {["الفئة", "المنتج", "الكود", "سعر الشراء", "سعر البيع", "هامش الربح", "المخزون", "طباعة"].map(h => (
                 <th key={h} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#555", borderBottom: "2px solid #eee" }}>{h}</th>
               ))}
             </tr>
@@ -534,16 +633,20 @@ function InventorySection({ products, onRefresh }) {
                 <tr key={p.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafbff" }}>
                   <td style={{ padding: "10px 12px", fontSize: 12 }}>{p.cat}</td>
                   <td style={{ padding: "10px 12px", fontWeight: 600 }}>{p.name}</td>
+                  <td style={{ padding: "10px 12px", color: "#888", fontSize: 12 }}>{p.barcode || "—"}</td>
                   <td style={{ padding: "10px 12px", color: "#c62828" }}>{dinarFmt(p.buy_price)}</td>
                   <td style={{ padding: "10px 12px", fontWeight: 700 }}>{dinarFmt(p.sell_price)}</td>
                   <td style={{ padding: "10px 12px", color: "#2e7d32", fontWeight: 700 }}>{margin}%</td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: p.stock < 3 ? "#ffebee" : "#e8f5e9", color: p.stock < 3 ? "#c62828" : "#2e7d32", borderRadius: 20, padding: "3px 12px", fontWeight: 700, fontSize: 13 }}>{p.stock}</span>
                   </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button onClick={() => setPrintProduct(p)} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 12 }}>🖨️ طباعة</button>
+                  </td>
                 </tr>
               );
             })}
-            {allProducts.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#aaa" }}>لا توجد منتجات بعد</td></tr>}
+            {allProducts.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: "#aaa" }}>لا توجد منتجات بعد</td></tr>}
           </tbody>
         </table>
       </div>
@@ -557,6 +660,7 @@ function InventorySection({ products, onRefresh }) {
             </select>
           </FormField>
           <FormField label="اسم المنتج"><input type="text" style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></FormField>
+          <FormField label="رقم الباركود (اختياري — أو سيُولَّد تلقائياً)"><input type="text" style={inputStyle} placeholder="مثال: 12345" value={form.barcode} onChange={e => setForm(f => ({ ...f, barcode: e.target.value }))} /></FormField>
           <FormField label="سعر الشراء (د.ل)"><input type="number" style={inputStyle} value={form.buyPrice} onChange={e => setForm(f => ({ ...f, buyPrice: e.target.value }))} /></FormField>
           <FormField label="سعر البيع (د.ل)"><input type="number" style={inputStyle} value={form.sellPrice} onChange={e => setForm(f => ({ ...f, sellPrice: e.target.value }))} /></FormField>
           <FormField label="الكمية في المخزون"><input type="number" style={inputStyle} value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} /></FormField>
@@ -565,6 +669,7 @@ function InventorySection({ products, onRefresh }) {
           </button>
         </Modal>
       )}
+      {printProduct && <PrintLabel product={printProduct} onClose={() => setPrintProduct(null)} />}
     </div>
   );
 }
@@ -681,7 +786,56 @@ const SECTIONS = [
   { key: "employees", icon: "👥", label: "الموظفين" },
 ];
 
+// ==================== PASSWORDS ====================
+const PASSWORDS = {
+  admin: "apple2024",   // كلمة سر المدير — غيّرها لاحقاً
+  seller: "sell1234",   // كلمة سر البائع — غيّرها لاحقاً
+};
+
+const SELLER_SECTIONS = ["dashboard", "iphone", "android", "accessories", "maintenance", "software"];
+const ADMIN_SECTIONS = SECTIONS.map(s => s.key);
+
+// ==================== LOGIN ====================
+function LoginScreen({ onLogin }) {
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState("");
+
+  const handleLogin = () => {
+    if (pass === PASSWORDS.admin) { onLogin("admin"); }
+    else if (pass === PASSWORDS.seller) { onLogin("seller"); }
+    else { setError("كلمة السر غلط، حاول مرة ثانية"); setPass(""); }
+  };
+
+  return (
+    <div dir="rtl" style={{ fontFamily: "'Segoe UI', Tahoma, Arial, sans-serif", height: "100vh", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 40, width: 320, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontSize: 48, marginBottom: 8 }}>📱</div>
+        <div style={{ fontWeight: 900, fontSize: 20, color: "#1a1a2e", marginBottom: 4 }}>أبل للهاتف المحمول</div>
+        <div style={{ color: "#888", fontSize: 13, marginBottom: 28 }}>الزاوية، ليبيا</div>
+        <div style={{ textAlign: "right", marginBottom: 8, fontSize: 13, fontWeight: 600, color: "#555" }}>كلمة السر</div>
+        <input
+          type="password"
+          placeholder="أدخل كلمة السر"
+          value={pass}
+          onChange={e => { setPass(e.target.value); setError(""); }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "1.5px solid #e0e0e0", fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 12, outline: "none", textAlign: "center", letterSpacing: 4 }}
+        />
+        {error && <div style={{ color: "#c62828", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button onClick={handleLogin} style={{ width: "100%", background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 10, padding: 13, fontFamily: "inherit", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
+          🔓 دخول
+        </button>
+        <div style={{ marginTop: 20, fontSize: 11, color: "#ccc" }}>
+          مدير / بائع
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== MAIN APP ====================
 export default function App() {
+  const [role, setRole] = useState(null); // null = not logged in
   const [activeSection, setActiveSection] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -696,17 +850,22 @@ export default function App() {
     setLoading(false);
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { if (role) loadAll(); }, [role]);
+
+  if (!role) return <LoginScreen onLogin={setRole} />;
+
+  const allowedSections = SECTIONS.filter(s => role === "admin" ? true : SELLER_SECTIONS.includes(s.key));
+  const isAdmin = role === "admin";
 
   const renderSection = () => {
     if (loading) return <Loader />;
     switch (activeSection) {
       case "dashboard": return <Dashboard sales={data.sales} maintenance={data.maintenance} debts={data.debts} />;
-      case "iphone": return <SalesSection type="iphone" title="مبيعات آيفون" icon="📱" products={data.products} sales={data.sales} onRefresh={loadAll} />;
-      case "android": return <SalesSection type="android" title="مبيعات أندرويد" icon="🤖" products={data.products} sales={data.sales} onRefresh={loadAll} />;
-      case "accessories": return <SalesSection type="accessories" title="الإكسسوارات" icon="🎧" products={data.products} sales={data.sales} onRefresh={loadAll} />;
-      case "maintenance": return <MaintenanceSection maintenance={data.maintenance} onRefresh={loadAll} />;
-      case "software": return <SoftwareSection software={data.software} onRefresh={loadAll} />;
+      case "iphone": return <SalesSection type="iphone" title="مبيعات آيفون" icon="📱" products={data.products} sales={data.sales} onRefresh={loadAll} isAdmin={isAdmin} />;
+      case "android": return <SalesSection type="android" title="مبيعات أندرويد" icon="🤖" products={data.products} sales={data.sales} onRefresh={loadAll} isAdmin={isAdmin} />;
+      case "accessories": return <SalesSection type="accessories" title="الإكسسوارات" icon="🎧" products={data.products} sales={data.sales} onRefresh={loadAll} isAdmin={isAdmin} />;
+      case "maintenance": return <MaintenanceSection maintenance={data.maintenance} onRefresh={loadAll} isAdmin={isAdmin} />;
+      case "software": return <SoftwareSection software={data.software} onRefresh={loadAll} isAdmin={isAdmin} />;
       case "debts": return <DebtsSection debts={data.debts} onRefresh={loadAll} />;
       case "inventory": return <InventorySection products={data.products} onRefresh={loadAll} />;
       case "reports": return <ReportsSection sales={data.sales} maintenance={data.maintenance} software={data.software} />;
@@ -722,18 +881,24 @@ export default function App() {
           <button onClick={() => setSidebarOpen(o => !o)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, width: 32, height: 32, color: "#fff", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>☰</button>
           {sidebarOpen && <div>
             <div style={{ color: "#fff", fontWeight: 800, fontSize: 14, lineHeight: 1.2 }}>أبل للهاتف المحمول</div>
-            <div style={{ color: "#aaa", fontSize: 11 }}>الزاوية، ليبيا</div>
+            <div style={{ color: isAdmin ? "#4caf50" : "#ffb74d", fontSize: 11 }}>{isAdmin ? "👑 مدير" : "👤 بائع"}</div>
           </div>}
         </div>
         <nav style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          {SECTIONS.map(s => (
+          {allowedSections.map(s => (
             <button key={s.key} onClick={() => { setActiveSection(s.key); setSidebarOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "right", padding: "11px 12px", borderRadius: 10, border: "none", cursor: "pointer", background: activeSection === s.key ? "rgba(74,111,165,0.4)" : "transparent", color: activeSection === s.key ? "#7eb3ff" : "#bbb", fontFamily: "inherit", fontSize: 13, fontWeight: activeSection === s.key ? 700 : 400, marginBottom: 2, transition: "all .2s", whiteSpace: "nowrap" }}>
               <span style={{ fontSize: 18, flexShrink: 0 }}>{s.icon}</span>
               {sidebarOpen && <span>{s.label}</span>}
             </button>
           ))}
         </nav>
-        {sidebarOpen && <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.1)", color: "#666", fontSize: 11, textAlign: "center" }}>منظومة أبل للمبيعات v2.0</div>}
+        {sidebarOpen && (
+          <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+            <button onClick={() => setRole(null)} style={{ width: "100%", background: "#c62828", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              🚪 خروج
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
